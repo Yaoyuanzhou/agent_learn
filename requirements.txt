@@ -1,0 +1,18 @@
+# Agent Learning 依赖
+# 安装：pip install -r requirements.txt
+
+# LLM 调用（OpenAI 兼容接口）
+openai>=1.30.0
+
+# 本地 Embedding（sentence-transformers）
+sentence-transformers>=2.7.0
+torch>=2.0.0          # sentence-transformers 依赖
+
+# RAG 向量库
+chromadb>=0.5.0
+
+# 稀疏检索 BM25
+rank-bm25>=0.2.2
+
+# 数据处理
+numpy>=1.26.0

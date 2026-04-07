@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Learning — 架构设计文档</title>
+<style>
+  :root {
+    --blue:#3b82f6; --blue-lt:#eff6ff; --blue-dk:#1d4ed8;
+    --green:#22c55e; --green-lt:#f0fdf4; --green-dk:#166534;
+    --purple:#7c3aed; --purple-lt:#faf5ff; --purple-dk:#5b21b6;
+    --cyan:#0891b2; --cyan-lt:#ecfeff;
+    --orange:#f59e0b; --orange-lt:#fffbeb; --orange-dk:#b45309;
+    --red:#ef4444; --red-lt:#fef2f2; --red-dk:#991b1b;
+    --slate:#475569; --card:#fff; --border:#e5e7eb; --shadow:0 10px 30px rgba(15,23,42,0.08);
+    --text:#1f2937; --muted:#667085; --radius:18px; --max:1100px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       color:var(--text);background:linear-gradient(180deg,#f0fdf4 0%,#f5f7fb 200px);line-height:1.85;}
+  a{color:var(--blue);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+
+  /* ── Page + Layout ── */
+  .page{max-width:var(--max);margin:0 auto;padding:32px 20px 80px;}
+  .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:22px;align-items:start;}
+  .content{display:flex;flex-direction:column;gap:18px;min-width:0;}
+  @media(max-width:860px){.layout{grid-template-columns:1fr;}.toc{position:static;}}
+
+  /* ── Nav TOC (左侧 sticky，对齐 notes-agent.html) ── */
+  .toc{position:sticky;top:20px;background:var(--card);
+       border:1px solid var(--border);border-radius:var(--radius);
+       box-shadow:var(--shadow);padding:18px;
+       max-height:calc(100vh - 40px);overflow-y:auto;}
+  .toc h2{margin:0 0 12px;font-size:15px;font-weight:700;color:var(--text);}
+  .toc-list{list-style:none;margin:0;padding:0;}
+  .toc-list li{margin:0;}
+  .toc-list a{display:block;padding:5px 8px;border-radius:8px;color:var(--muted);font-size:13px;transition:all 0.15s;text-decoration:none;}
+  .toc-list a:hover{color:#059669;background:#ecfdf5;}
+  .toc-list .toc-l2 a{padding-left:20px;font-size:12px;}
+
+  /* ── Sections ── */
+  .sec{background:var(--card);border-radius:var(--radius);padding:26px 28px;
+       border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;}
+  .sec-title{display:flex;align-items:center;gap:12px;margin:0 0 20px;}
+  .sec-title .icon{width:38px;height:38px;border-radius:10px;display:flex;
+                   align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+  .sec-title h2{font-size:20px;font-weight:700;color:var(--text);}
+  h3{font-size:17px;font-weight:700;margin:26px 0 12px;color:#111827;border-left:3px solid #6ee7b7;padding-left:10px;}
+  h4{font-size:15px;font-weight:700;margin:18px 0 8px;color:#374151;}
+  p{font-size:13.5px;margin:0 0 10px;}
+  ul,ol{padding-left:24px;margin:8px 0 12px;}
+  li{margin:6px 0;font-size:13.5px;}
+
+  /* ── Header / Hero ── */
+  .header{background:radial-gradient(circle at top right,rgba(16,185,129,0.15),transparent 30%),
+                      radial-gradient(circle at left bottom,rgba(37,99,235,0.10),transparent 24%),#0f172a;
+          color:#f1f5f9;padding:40px 36px 32px;border-radius:24px;margin-bottom:22px;
+          box-shadow:0 10px 30px rgba(15,23,42,0.15);}
+  .header h1{font-size:28px;font-weight:900;letter-spacing:-.5px;margin:10px 0 8px;}
+  .header .sub{color:#94a3b8;font-size:14px;line-height:1.9;}
+  .badge{display:inline-block;background:rgba(255,255,255,.13);color:#e2e8f0;
+         font-size:11px;padding:3px 11px;border-radius:20px;margin:2px 4px 2px 0;
+         border:1px solid rgba(255,255,255,.18);}
+  .check-list{margin:14px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .check-item{font-size:12.5px;color:#cbd5e1;display:flex;align-items:center;gap:6px;}
+  .check-item .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0;}
+
+  /* ── Code blocks ── */
+  pre.code{background:#1e293b;border-radius:12px;padding:16px 20px;
+        font-family:"SF Mono","SFMono-Regular",Consolas,Menlo,monospace;
+        font-size:13px;line-height:1.7;color:#e2e8f0;overflow-x:auto;margin:14px 0;
+        white-space:pre;display:block;}
+  pre.code .cm{color:#64748b;} pre.code .kw{color:#93c5fd;} pre.code .str{color:#86efac;}
+  pre.code .fn{color:#fbbf24;} pre.code .cmd{color:#a78bfa;} pre.code .hi{color:#34d399;}
+
+  /* ── Callouts ── */
+  .call{border-radius:14px;padding:16px 18px;font-size:13px;margin:12px 0;line-height:1.85;}
+  .call-blue  {background:#eff6ff;border:1px solid #bfdbfe;}
+  .call-green {background:#f0fdf4;border:1px solid #bbf7d0;}
+  .call-orange{background:#fffbeb;border:1px solid #fde68a;}
+  .call-purple{background:#faf5ff;border:1px solid #e9d5ff;}
+  .call-red   {background:#fef2f2;border:1px solid #fecaca;}
+
+  /* ── Tables ── */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0;}
+  thead th,th{background:#ecfdf5;color:#065f46;text-align:left;font-weight:700;padding:10px 14px;border-bottom:2px solid #6ee7b7;}
+  td{padding:10px 14px;border-bottom:1px solid #eef2f7;vertical-align:top;line-height:1.7;word-break:break-word;}
+  tbody tr:nth-child(even){background:#f8fff9;}
+  tr:last-child td{border-bottom:none;}
+  code{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;
+       padding:2px 7px;font-family:"SF Mono",Consolas,Monaco,monospace;font-size:13px;color:#2563eb;}
+
+  /* ── File cards ── */
+  .file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:14px 0;}
+  .file-card{border:1px solid var(--border);border-radius:14px;padding:18px;transition:.2s;background:#fafcff;}
+  .file-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.08);}
+  .file-card .fc-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .file-card .fc-name{font-weight:700;font-size:14px;font-family:"SF Mono",monospace;}
+  .file-card .fc-tag{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600;}
+  .file-card .fc-desc{font-size:13px;color:var(--muted);line-height:1.7;}
+  .file-card .fc-flow{margin-top:10px;font-size:12px;color:var(--slate);}
+  .file-card .step{display:inline-block;background:#f8fafc;border:1px solid var(--border);border-radius:5px;padding:2px 7px;margin:2px;}
+
+  /* ── Flow arrows ── */
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0;}
+  .flow-box{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;text-align:center;}
+  .flow-arr{color:#94a3b8;font-size:14px;flex-shrink:0;}
+
+  /* ── Changelog ── */
+  .cl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;}
+  .cl-item:last-child{border-bottom:none;}
+  .cl-date{font-size:11px;color:var(--muted);white-space:nowrap;min-width:76px;padding-top:3px;}
+  .cl-tag{font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;height:fit-content;white-space:nowrap;}
+  .cl-body{font-size:13px;line-height:1.7;}
+
+  /* ── Step number ── */
+  .step-num{display:inline-flex;width:22px;height:22px;border-radius:50%;
+            align-items:center;justify-content:center;font-size:11px;font-weight:700;
+            flex-shrink:0;margin-right:4px;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ────────── Header ────────── -->
+<div class="header">
+  <div>
+    <span class="badge">Python 3.9+</span>
+    <span class="badge">DeepSeek / 国产 LLM</span>
+    <span class="badge">sentence-transformers</span>
+    <span class="badge">ChromaDB</span>
+    <span class="badge">OpenAI 兼容接口</span>
+  </div>
+  <h1>🤖 Agent Learning</h1>
+  <div class="sub">
+    本地可运行的 AI Agent 学习实例代码库 · 覆盖 CoT / ReAct / Reflexion / Function Calling / RAG / 记忆管理 / 多 Agent 全技术栈<br>
+    每个模块独立可运行 · 有真实 LLM 调用 · 全部代码已测试通过 ✅
+  </div>
+  <div class="check-list">
+    <div class="check-item"><div class="dot"></div>8/8 模块测试通过</div>
+    <div class="check-item"><div class="dot"></div>BGE 本地 Embedding（无需 API）</div>
+    <div class="check-item"><div class="dot"></div>DeepSeek / Qwen 任意国产模型</div>
+    <div class="check-item"><div class="dot"></div>命令行一行调用 Agent</div>
+    <div class="check-item"><div class="dot"></div>RAG 向量库本地持久化</div>
+    <div class="check-item"><div class="dot"></div>Multi-Agent 黑板协作模式</div>
+  </div>
+</div>
+
+<!-- ─ 两栏布局 ─ -->
+<div class="layout">
+  <!-- 左侧 TOC -->
+  <nav class="toc">
+    <h2>目录</h2>
+    <ul class="toc-list">
+      <li><a href="#start">🚀 快速开始</a></li>
+      <li><a href="#arch">🏗️ 整体架构</a></li>
+      <li class="toc-l2"><a href="#m01">01 CoT</a></li>
+      <li class="toc-l2"><a href="#m02">02 ReAct</a></li>
+      <li class="toc-l2"><a href="#m03">03 Tools</a></li>
+      <li class="toc-l2"><a href="#m04">04 RAG</a></li>
+      <li class="toc-l2"><a href="#m05">05 Memory</a></li>
+      <li class="toc-l2"><a href="#m06">06 Multi-Agent</a></li>
+      <li><a href="#entry">⌨️ 命令行入口</a></li>
+      <li><a href="#design">🎯 设计决策</a></li>
+      <li><a href="#changelog">📋 更新日志</a></li>
+    </ul>
+  </nav>
+
+  <!-- 右侧主内容 -->
+  <div class="content">
+
+<!-- ────────── 快速开始 ────────── -->
+<div class="sec" id="start">
+  <div class="sec-title">
+    <div class="icon" style="background:#f0fdf4;">🚀</div>
+    <h2>快速开始</h2>
+  </div>
+
+  <h3>第一步：配置 API Key</h3>
+  <p>只需修改 <code>config.py</code> 一个文件，填入你的大模型接口信息：</p>
+  <pre class="code"><span class="cm"># config.py —— 改这三行就够了</span>
+<span class="kw">LLM_BASE_URL</span> = <span class="str">"https://api.deepseek.com/v1"</span>   <span class="cm"># 国产模型 OpenAI 兼容接口</span>
+<span class="kw">LLM_API_KEY</span>  = <span class="str">"sk-你的key"</span>
+<span class="kw">LLM_MODEL</span>    = <span class="str">"deepseek-chat"</span>                  <span class="cm"># 或 qwen-turbo / qwen-plus 等</span></pre>
+
+  <h3>第二步：安装依赖</h3>
+  <pre class="code"><span class="cm"># 推荐使用 venv 隔离环境</span>
+python3 -m venv .venv
+source .venv/bin/activate          <span class="cm"># macOS / Linux</span>
+.venv\Scripts\activate             <span class="cm"># Windows</span>
+
+pip install -r requirements.txt    <span class="cm"># 约 800MB（主要是 torch）</span></pre>
+
+  <div class="call call-orange">
+    <strong>⏱ 首次安装说明：</strong><br>
+    torch 约 800MB，建议使用国内镜像：<code>pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple</code><br>
+    sentence-transformers 会在<strong>第一次运行 RAG 模块时</strong>自动下载 BGE 模型（~100MB），保存在 <code>~/.cache/huggingface/</code>，后续不再重新下载。
+  </div>
+
+  <h3>第三步：运行</h3>
+  <pre class="code"><span class="cm"># ── 激活环境后直接用 ──────────────────────────────────</span>
+source .venv/bin/activate
+
+<span class="cm"># 单 Agent（ReAct 模式，默认）</span>
+<span class="cmd">python agent.py</span> <span class="str">"北京今天天气怎么样？"</span>
+<span class="cmd">python agent.py</span> <span class="str">"计算 sqrt(256) + sqrt(144)"</span>
+
+<span class="cm"># 多 Agent 模式（搜索 + 写作 Pipeline）</span>
+<span class="cmd">python agent.py</span> <span class="str">"向量数据库的核心原理"</span> --mode multi
+
+<span class="cm"># RAG 模式（加载本地文档后回答）</span>
+<span class="cmd">python agent.py</span> <span class="str">"这批文档讲了什么？"</span> --mode rag --docs ./data/docs
+
+<span class="cm"># 单独学习某个模块</span>
+<span class="cmd">python 01_cot/simple_cot.py</span>           <span class="cm"># CoT 对比实验</span>
+<span class="cmd">python 02_react/react_agent.py</span>        <span class="cm"># ReAct 主循环</span>
+<span class="cmd">python 02_react/reflexion_agent.py</span>    <span class="cm"># 失败→反思→重试</span>
+<span class="cmd">python 03_tools/function_calling.py</span>   <span class="cm"># 四轮对话流程</span>
+<span class="cmd">python 04_rag/rag_pipeline.py</span>         <span class="cm"># 完整 RAG 流水线</span>
+<span class="cmd">python 06_multi_agent/orchestrator.py</span> <span class="cm"># 多 Agent 协作</span></pre>
+</div>
+
+<!-- ────────── 整体架构 ────────── -->
+<div class="sec" id="arch">
+  <div class="sec-title">
+    <div class="icon" style="background:#eff6ff;">🏗️</div>
+    <h2>整体架构</h2>
+  </div>
+
+  <h3>目录结构</h3>
+  <pre class="code"><span class="hi">agent-learning/</span>
+├── <span class="fn">config.py</span>          <span class="cm">⚙️  全局配置（API Key / 模型名 / 路径）← 只改这一个文件</span>
+├── <span class="fn">llm.py</span>             <span class="cm">🔌 LLM 调用封装，所有模块统一从这里调</span>
+├── <span class="fn">agent.py</span>           <span class="cm">🎮 命令行入口（react / multi / rag 三种模式）</span>
+├── <span class="fn">requirements.txt</span>   <span class="cm">📦 依赖：openai / sentence-transformers / chromadb / rank-bm25</span>
+├── <span class="fn">design.html</span>        <span class="cm">📖 本文档（架构设计，持续更新）</span>
+│
+├── <span class="kw">01_cot/</span>             <span class="cm">思维链基础：Zero-Shot / Few-Shot CoT 对比</span>
+│   └── <span class="fn">simple_cot.py</span>
+│
+├── <span class="kw">02_react/</span>           <span class="cm">ReAct 推理框架 + Reflexion 失败反思变体</span>
+│   ├── <span class="fn">tools.py</span>           <span class="cm">可用工具集（search / calculator / weather）</span>
+│   ├── <span class="fn">react_agent.py</span>     <span class="cm">Thought → Action → Observation 主循环</span>
+│   └── <span class="fn">reflexion_agent.py</span> <span class="cm">失败 → LLM生成反思 → 写入记忆 → 重试</span>
+│
+├── <span class="kw">03_tools/</span>           <span class="cm">Function Calling 底层机制详解</span>
+│   ├── <span class="fn">function_calling.py</span> <span class="cm">四轮对话完整流程（打印每一轮）</span>
+│   ├── <span class="fn">parallel_tools.py</span>  <span class="cm">asyncio 并发执行多个工具</span>
+│   └── <span class="fn">error_handling.py</span>  <span class="cm">三类错误处理 + LLM 自动恢复</span>
+│
+├── <span class="kw">04_rag/</span>             <span class="cm">RAG 检索增强生成全链路</span>
+│   ├── <span class="fn">chunker.py</span>         <span class="cm">5种切块策略（固定/句子/段落/Markdown/父子）</span>
+│   ├── <span class="fn">embedder.py</span>        <span class="cm">本地 BGE Embedding 封装（首次自动下载）</span>
+│   ├── <span class="fn">vector_store.py</span>    <span class="cm">Chroma 向量库 + HNSW 索引（持久化到磁盘）</span>
+│   ├── <span class="fn">retriever.py</span>       <span class="cm">Dense / BM25 / Hybrid+RRF 三种检索策略</span>
+│   ├── <span class="fn">reranker.py</span>        <span class="cm">Cross-Encoder 两阶段精排</span>
+│   └── <span class="fn">rag_pipeline.py</span>    <span class="cm">串联所有组件的完整端到端流水线</span>
+│
+├── <span class="kw">05_memory/</span>          <span class="cm">记忆管理</span>
+│   ├── <span class="fn">short_term.py</span>      <span class="cm">滑动窗口 + LLM 摘要压缩（防止 Context 超限）</span>
+│   └── <span class="fn">long_term.py</span>       <span class="cm">SQLite 持久化（用户偏好/Reflexion反思/摘要归档）</span>
+│
+└── <span class="kw">06_multi_agent/</span>     <span class="cm">多 Agent 协作系统</span>
+    ├── <span class="fn">base_agent.py</span>      <span class="cm">Agent 基类：定义三要素 Prompt + Tools + 执行循环</span>
+    ├── <span class="fn">search_agent.py</span>    <span class="cm">搜索专家（只有检索工具，不能写作）</span>
+    ├── <span class="fn">writing_agent.py</span>   <span class="cm">写作专家（只有写作工具，不能检索）</span>
+    └── <span class="fn">orchestrator.py</span>    <span class="cm">协调者：Pipeline 串行 + 共享黑板两种模式</span></pre>
+
+  <h3>模块依赖关系图</h3>
+  <p style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">箭头表示「调用/依赖」关系</p>
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;overflow-x:auto;">
+  <svg viewBox="0 0 900 480" style="width:100%;max-width:900px;display:block;margin:0 auto;" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#94a3b8"/>
+      </marker>
+      <marker id="ar-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#3b82f6"/>
+      </marker>
+    </defs>
+
+    <!-- 背景 -->
+    <rect width="900" height="480" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+
+    <!-- 图例 -->
+    <line x1="20" y1="20" x2="50" y2="20" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ar)"/>
+    <text x="55" y="24" font-size="10" fill="#6b7280">调用关系</text>
+    <line x1="130" y1="20" x2="160" y2="20" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#ar-blue)"/>
+    <text x="165" y="24" font-size="10" fill="#6b7280">可选依赖</text>
+
+    <!-- ══ 层0：用户入口 ══ -->
+    <rect x="350" y="30" width="200" height="44" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1.5"/>
+    <text x="450" y="50" text-anchor="middle" font-size="12" font-weight="700" fill="#f1f5f9">👤 用户命令行</text>
+    <text x="450" y="66" text-anchor="middle" font-size="10" fill="#94a3b8">python agent.py "任务"</text>
+
+    <!-- ══ 层1：agent.py ══ -->
+    <rect x="350" y="102" width="200" height="44" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+    <text x="450" y="122" text-anchor="middle" font-size="12" font-weight="700" fill="#e2e8f0">agent.py</text>
+    <text x="450" y="138" text-anchor="middle" font-size="10" fill="#94a3b8">命令行入口 · 路由三种模式</text>
+    <line x1="450" y1="74" x2="450" y2="102" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+    <!-- ══ 层2：三种模式 ══ -->
+    <!-- react模式 -->
+    <rect x="60" y="182" width="150" height="44" rx="8" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="135" y="202" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">react_agent.py</text>
+    <text x="135" y="218" text-anchor="middle" font-size="10" fill="#7c3aed">--mode react（默认）</text>
+
+    <!-- multi模式 -->
+    <rect x="375" y="182" width="150" height="44" rx="8" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="450" y="202" text-anchor="middle" font-size="11" font-weight="700" fill="#991b1b">orchestrator.py</text>
+    <text x="450" y="218" text-anchor="middle" font-size="10" fill="#dc2626">--mode multi</text>
+
+    <!-- rag模式 -->
+    <rect x="690" y="182" width="150" height="44" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="765" y="202" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">rag_pipeline.py</text>
+    <text x="765" y="218" text-anchor="middle" font-size="10" fill="#22c55e">--mode rag</text>
+
+    <!-- agent.py → 三种模式 -->
+    <line x1="380" y1="146" x2="200" y2="182" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ar)"/>
+    <line x1="450" y1="146" x2="450" y2="182" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ar)"/>
+    <line x1="520" y1="146" x2="700" y2="182" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+    <!-- ══ 层3：支撑模块 ══ -->
+    <!-- llm.py -->
+    <rect x="170" y="292" width="130" height="44" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="235" y="312" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">llm.py</text>
+    <text x="235" y="328" text-anchor="middle" font-size="10" fill="#3b82f6">LLM 统一调用封装</text>
+
+    <!-- tools.py -->
+    <rect x="20" y="292" width="130" height="44" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+    <text x="85" y="312" text-anchor="middle" font-size="11" font-weight="700" fill="#0e7490">tools.py</text>
+    <text x="85" y="328" text-anchor="middle" font-size="10" fill="#0891b2">工具集 mock</text>
+
+    <!-- memory -->
+    <rect x="350" y="292" width="200" height="44" rx="8" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="450" y="312" text-anchor="middle" font-size="11" font-weight="700" fill="#b45309">short_term.py / long_term.py</text>
+    <text x="450" y="328" text-anchor="middle" font-size="10" fill="#f59e0b">05_memory/ 记忆管理</text>
+
+    <!-- rag components -->
+    <rect x="590" y="292" width="260" height="44" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="720" y="312" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">chunker / embedder / vector_store</text>
+    <text x="720" y="328" text-anchor="middle" font-size="10" fill="#22c55e">retriever / reranker（04_rag/）</text>
+
+    <!-- 连线：react → llm/tools/memory -->
+    <line x1="135" y1="226" x2="85" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="135" y1="226" x2="190" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="135" y1="226" x2="390" y2="292" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#ar-blue)"/>
+
+    <!-- 连线：orchestrator → llm/memory/rag -->
+    <line x1="450" y1="226" x2="280" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="450" y1="226" x2="450" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+
+    <!-- 连线：rag_pipeline → llm/rag -->
+    <line x1="765" y1="226" x2="280" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="765" y1="226" x2="720" y2="292" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ar)"/>
+
+    <!-- ══ 层4：config.py ══ -->
+    <rect x="350" y="400" width="200" height="44" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <text x="450" y="420" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">config.py</text>
+    <text x="450" y="436" text-anchor="middle" font-size="10" fill="#94a3b8">所有模块都从这里读配置</text>
+
+    <!-- llm/tools → config -->
+    <line x1="235" y1="336" x2="380" y2="400" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="720" y1="336" x2="520" y2="400" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,2"/>
+  </svg>
+  </div>
+
+  <h3>学习路径（建议顺序）</h3>
+  <div class="flow">
+    <div class="flow-box" style="background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;">01<br><small>CoT</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#faf5ff;border-color:#ddd6fe;color:#7c3aed;">02<br><small>ReAct</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#ecfeff;border-color:#a5f3fc;color:#0e7490;">03<br><small>Tools</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;">04<br><small>RAG</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#fffbeb;border-color:#fde68a;color:#b45309;">05<br><small>Memory</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b;">06<br><small>Multi-Agent</small></div>
+  </div>
+  <p style="font-size:12.5px;color:var(--muted);">每个模块都可以独立运行，不需要先学完前面的模块。01→02→03 理解单 Agent 后，04→05→06 是进阶内容。</p>
+</div>
+
+<!-- ────────── 01 CoT ────────── -->
+<div class="sec" id="m01">
+  <div class="sec-title">
+    <div class="icon" style="background:#eff6ff;font-size:22px;">💭</div>
+    <div>
+      <h2>01_cot — 思维链（Chain of Thought）</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">让模型「先想后答」的最简单技术 · 无需任何框架</div>
+    </div>
+  </div>
+
+  <div class="call call-blue">
+    <strong>核心思想：</strong>在 Prompt 中加一句「请一步一步思考」或提供带推理过程的示例，
+    模型的回答准确率会显著提升——尤其是数学、逻辑、多步骤推理类问题。
+    这是所有 Agent 技术的<strong>思维基础</strong>。
+  </div>
+
+  <h3>文件：<code>01_cot/simple_cot.py</code></h3>
+
+  <h4>三种模式对比</h4>
+  <table>
+    <tr><th>模式</th><th>核心做法</th><th>Prompt 差异</th><th>适用场景</th></tr>
+    <tr>
+      <td><strong>直接回答</strong></td>
+      <td>不加任何引导</td>
+      <td><code>"直接给出答案，不要解释"</code></td>
+      <td>简单事实查询</td>
+    </tr>
+    <tr>
+      <td><strong>Zero-Shot CoT</strong></td>
+      <td>问题末尾加魔法句</td>
+      <td><code>"请一步一步思考，最后给出答案"</code></td>
+      <td>大部分推理问题，零成本</td>
+    </tr>
+    <tr>
+      <td><strong>Few-Shot CoT</strong></td>
+      <td>提供 2–3 个推理示例</td>
+      <td>示例格式：问题→思考→答案</td>
+      <td>需要特定输出格式时</td>
+    </tr>
+  </table>
+
+  <h4>执行流程</h4>
+  <div class="flow" style="flex-direction:column;align-items:flex-start;gap:6px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="step-num" style="background:#eff6ff;color:#1d4ed8;">1</span>
+      <span style="font-size:13px;"><code>direct_answer(question)</code> → 直接发给 LLM，<strong>不展开推理</strong>，得到简短答案</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="step-num" style="background:#eff6ff;color:#1d4ed8;">2</span>
+      <span style="font-size:13px;"><code>zero_shot_cot(question)</code> → 在用户消息末尾拼接「请一步一步思考」，模型自动展开推理</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="step-num" style="background:#eff6ff;color:#1d4ed8;">3</span>
+      <span style="font-size:13px;"><code>few_shot_cot(question)</code> → Prompt 中先写 2 个示例（含推理过程），再跟真实问题</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="step-num" style="background:#eff6ff;color:#1d4ed8;">4</span>
+      <span style="font-size:13px;"><code>__main__</code> 里并列打印三种结果，直观对比效果差异</span>
+    </div>
+  </div>
+
+  <div class="call call-orange">
+    <strong>学完这里你能理解：</strong> Prompt Engineering 的核心是「给模型设计思维脚手架」。
+    Zero-Shot CoT 是成本最低的提升手段，只需一句话。
+    模型不是「不会算」，而是在<em>没有推理空间</em>时直接猜答案。
+  </div>
+</div>
+
+<!-- ────────── 02 ReAct ────────── -->
+<div class="sec" id="m02">
+  <div class="sec-title">
+    <div class="icon" style="background:#faf5ff;font-size:22px;">🔄</div>
+    <div>
+      <h2>02_react — ReAct + Reflexion</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Agent 核心循环：Thought → Action → Observation</div>
+    </div>
+  </div>
+
+  <div class="call call-purple">
+    <strong>核心思想：</strong>ReAct = <strong>Re</strong>asoning + <strong>Act</strong>ing。
+    模型不再「一步到位」，而是进入一个循环：
+    先<em>思考</em>（应该做什么），再<em>行动</em>（调工具），再<em>观察</em>（工具返回了什么），
+    再继续思考……直到任务完成。
+    这是现代 AI Agent 的最基础架构。
+  </div>
+
+  <h3>文件清单</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#ecfeff;color:#0e7490;">工具集</div>
+        <div class="fc-name">tools.py</div>
+      </div>
+      <div class="fc-desc">
+        定义三个 Mock 工具：<code>search</code>（网络搜索）、<code>calculator</code>（数学计算）、<code>get_weather</code>（天气查询）。
+        包含两个关键部分：<br>
+        <strong>TOOL_SCHEMAS</strong>：OpenAI Function Calling 格式的 JSON Schema，告诉 LLM「有哪些工具、参数是什么」<br>
+        <strong>execute_tool(name, args)</strong>：根据工具名字分发到对应函数并执行
+      </div>
+      <div class="fc-flow">
+        <span class="step">定义 JSON Schema</span>→<span class="step">注册到工具表</span>→<span class="step">execute_tool 路由</span>
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#faf5ff;color:#7c3aed;">核心循环</div>
+        <div class="fc-name">react_agent.py</div>
+      </div>
+      <div class="fc-desc">
+        <code>run_react(task)</code> 实现 ReAct 主循环。每一步：<br>
+        1. 把当前对话历史发给 LLM（带工具列表）<br>
+        2. LLM 要么给出最终答案（结束），要么请求调工具<br>
+        3. 执行工具，把结果作为「Observation」追加进对话历史<br>
+        4. 回到第1步，最多循环 <code>MAX_STEPS=10</code> 次
+      </div>
+      <div class="fc-flow">
+        <span class="step">用户任务</span>→<span class="step">LLM决策</span>→<span class="step">有工具调用?</span>→<span class="step">执行→注入Obs</span>→<span class="step">循环/结束</span>
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fef2f2;color:#991b1b;">反思变体</div>
+        <div class="fc-name">reflexion_agent.py</div>
+      </div>
+      <div class="fc-desc">
+        Reflexion = ReAct + <strong>失败后反思</strong>。LLM 作为评估器判断回答是否合格，
+        失败则生成一段「反思文字」（哪里错了、下次怎么改），
+        存入 <code>memory</code> 列表，再次尝试时把历史反思注入 Prompt。
+        最多重试 3 次。
+      </div>
+      <div class="fc-flow">
+        <span class="step">执行任务</span>→<span class="step">LLM评估</span>→<span class="step">FAIL→生成反思</span>→<span class="step">memory.append()</span>→<span class="step">注入重试</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>ReAct 完整流程图</h3>
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;overflow-x:auto;">
+  <svg viewBox="0 0 860 260" style="width:100%;max-width:860px;display:block;margin:0 auto;" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="a2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#7c3aed"/>
+      </marker>
+    </defs>
+    <!-- 背景 -->
+    <rect width="860" height="260" rx="10" fill="#fafbff" stroke="#e2e8f0"/>
+    <!-- 节点 -->
+    <rect x="20"  y="100" width="110" height="48" rx="8" fill="#e0e7ff" stroke="#818cf8" stroke-width="1.5"/>
+    <text x="75"  y="122" text-anchor="middle" font-size="12" font-weight="700" fill="#312e81">用户任务</text>
+    <text x="75"  y="138" text-anchor="middle" font-size="10" fill="#6366f1">task</text>
+
+    <rect x="170" y="100" width="120" height="48" rx="8" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="230" y="118" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">Thought</text>
+    <text x="230" y="133" text-anchor="middle" font-size="10" fill="#7c3aed">LLM 分析决策</text>
+    <text x="230" y="145" text-anchor="middle" font-size="9"  fill="#a78bfa">「我需要先查天气」</text>
+
+    <rect x="340" y="60"  width="120" height="48" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="400" y="78"  text-anchor="middle" font-size="11" font-weight="700" fill="#166534">Action</text>
+    <text x="400" y="93"  text-anchor="middle" font-size="10" fill="#22c55e">调用工具</text>
+    <text x="400" y="105" text-anchor="middle" font-size="9"  fill="#4ade80">get_weather(北京)</text>
+
+    <rect x="340" y="150" width="120" height="48" rx="8" fill="#fef9c3" stroke="#eab308" stroke-width="1.5"/>
+    <text x="400" y="168" text-anchor="middle" font-size="11" font-weight="700" fill="#713f12">Observation</text>
+    <text x="400" y="183" text-anchor="middle" font-size="10" fill="#a16207">工具返回结果</text>
+    <text x="400" y="195" text-anchor="middle" font-size="9"  fill="#ca8a04">「北京 22°C 阴」</text>
+
+    <rect x="510" y="100" width="120" height="48" rx="8" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="570" y="118" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">Thought</text>
+    <text x="570" y="133" text-anchor="middle" font-size="10" fill="#7c3aed">继续分析</text>
+    <text x="570" y="145" text-anchor="middle" font-size="9"  fill="#a78bfa">「已有足够信息」</text>
+
+    <!-- 判断：还需要工具? -->
+    <polygon points="700,100 760,124 700,148 640,124" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="700" y="120" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">还需要</text>
+    <text x="700" y="134" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">工具？</text>
+
+    <rect x="790" y="100" width="50" height="48" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="815" y="122" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">回答</text>
+    <text x="815" y="138" text-anchor="middle" font-size="9"  fill="#16a34a">最终结果</text>
+
+    <!-- 循环 回退箭头 -->
+    <path d="M 460,196 Q 490,230 570,230 Q 620,230 620,190 L 620,148" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-dasharray="4,2"/>
+    <text x="520" y="245" text-anchor="middle" font-size="10" fill="#a16207">← 注入对话历史，循环</text>
+
+    <!-- 正向箭头 -->
+    <line x1="130" y1="124" x2="170" y2="124" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a2)"/>
+    <line x1="290" y1="112" x2="340" y2="88"  stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a2)"/>
+    <line x1="400" y1="108" x2="400" y2="150" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a2)"/>
+    <line x1="460" y1="178" x2="510" y2="128" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a2)"/>
+    <line x1="630" y1="124" x2="640" y2="124" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#a2)"/>
+    <line x1="760" y1="124" x2="790" y2="124" stroke="#22c55e" stroke-width="1.5" marker-end="url(#a2)"/>
+
+    <!-- 是/否 标签 -->
+    <text x="770" y="118" font-size="10" fill="#22c55e" font-weight="600">否</text>
+    <text x="630" y="118" font-size="10" fill="#f59e0b" font-weight="600">是→循环</text>
+  </svg>
+  </div>
+
+  <h4>关键代码理解</h4>
+  <pre class="code"><span class="cm"># react_agent.py 核心逻辑（简化版）</span>
+messages = [system_prompt, user_task]
+
+<span class="kw">for</span> step <span class="kw">in</span> range(MAX_STEPS):
+    response = <span class="fn">chat_with_tools</span>(messages, tools=TOOL_SCHEMAS)
+    messages.append(response)           <span class="cm"># 把LLM回复加入历史</span>
+
+    <span class="kw">if not</span> response.tool_calls:
+        <span class="kw">return</span> response.content           <span class="cm"># LLM不调工具了 → 任务结束</span>
+
+    <span class="kw">for</span> tool_call <span class="kw">in</span> response.tool_calls:
+        result = <span class="fn">execute_tool</span>(tool_call.name, tool_call.args)
+        messages.append({<span class="str">"role"</span>: <span class="str">"tool"</span>, <span class="str">"content"</span>: result})  <span class="cm"># Observation注入</span></pre>
+
+  <div class="call call-orange">
+    <strong>「写入记忆」是什么？</strong><br>
+    <code>reflexion_agent.py</code> 第 46 行：<code>memory: list[str] = []</code>，这就是记忆——一个普通 Python 列表。
+    每次失败后 <code>memory.append(reflection)</code> 把反思文字追加进去。
+    下次重试时，把 <code>memory</code> 里的内容拼接到 Prompt 里注入给 LLM。
+    <strong>「写入记忆」没有任何魔法，就是字符串拼接。</strong>
+    更高级的实现可以换成 SQLite、向量库等持久化方案（见 05_memory）。
+  </div>
+</div>
+
+<!-- ────────── 03 Tools ────────── -->
+<div class="sec" id="m03">
+  <div class="sec-title">
+    <div class="icon" style="background:#ecfeff;font-size:22px;">🔧</div>
+    <div>
+      <h2>03_tools — Function Calling 底层机制</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">理解 LLM 调用工具的底层协议 · 四轮对话完整流程</div>
+    </div>
+  </div>
+
+  <div class="call call-blue">
+    <strong>与 02_react 的关系：</strong>02_react 的工具调用是「用起来」，03_tools 是「理解原理」。
+    这里的代码更底层，直接用 OpenAI client 而不是封装好的 <code>chat_with_tools</code>，
+    帮你看清楚每一轮消息的格式和对话历史的变化。
+  </div>
+
+  <h3>文件清单</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#ecfeff;color:#0e7490;">完整流程</div>
+        <div class="fc-name">function_calling.py</div>
+      </div>
+      <div class="fc-desc">
+        <code>run_function_calling()</code> 直接调 <code>openai.client.chat.completions.create()</code>，
+        打印每一轮：发了几条消息、LLM 要求调哪个工具（含参数 JSON）、工具返回什么、最终答案。
+        适合彻底搞清楚 Function Calling 的消息格式。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#f0fdf4;color:#166534;">并发执行</div>
+        <div class="fc-name">parallel_tools.py</div>
+      </div>
+      <div class="fc-desc">
+        当 LLM 一次返回多个 <code>tool_calls</code> 时，用 <code>asyncio.gather()</code>
+        并发执行，避免串行等待。
+        比如「同时查北京和上海的天气」会触发两次工具调用。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fef2f2;color:#991b1b;">错误处理</div>
+        <div class="fc-name">error_handling.py</div>
+      </div>
+      <div class="fc-desc">
+        三类错误场景：<strong>参数校验失败</strong>（传了非法参数）、
+        <strong>执行异常</strong>（工具内部报错）、<strong>超时</strong>（工具超时）。
+        出错时把错误信息返回给 LLM，LLM 会自动调整参数重试。
+      </div>
+    </div>
+  </div>
+
+  <h3>Function Calling 四轮对话消息格式</h3>
+  <pre class="code"><span class="cm"># ── Round 1：用户问题 → LLM 返回 tool_calls ──────────────</span>
+messages = [
+  {<span class="str">"role"</span>: <span class="str">"system"</span>, <span class="str">"content"</span>: <span class="str">"你是有工具可用的助手"</span>},
+  {<span class="str">"role"</span>: <span class="str">"user"</span>,   <span class="str">"content"</span>: <span class="str">"圆半径5，面积和周长各是多少？"</span>}
+]
+<span class="cm"># LLM 返回（不是文字，是工具调用请求）：</span>
+<span class="cm"># role: assistant, tool_calls: [{name: "calculator", args: "{'expression':'pi*5**2'}"}]</span>
+
+<span class="cm"># ── Round 2：追加工具调用请求 + 工具结果 ─────────────────</span>
+messages.append({<span class="str">"role"</span>: <span class="str">"assistant"</span>, <span class="str">"tool_calls"</span>: [...]})  <span class="cm"># 加入LLM的请求</span>
+messages.append({<span class="str">"role"</span>: <span class="str">"tool"</span>, <span class="str">"tool_call_id"</span>: <span class="str">"call_xxx"</span>, <span class="str">"content"</span>: <span class="str">"78.53975"</span>})
+
+<span class="cm"># ── Round 3：继续发给 LLM（此时它知道面积了，继续算周长）──</span>
+<span class="cm"># LLM 可能再次请求调工具：calculator(2*pi*5)</span>
+
+<span class="cm"># ── Round 4：LLM 拿到所有数据，给出最终文字答案 ──────────</span>
+<span class="cm"># role: assistant, content: "半径5的圆：面积≈78.54，周长≈31.42"</span></pre>
+
+  <div class="call call-orange">
+    <strong>关键规则：</strong>只要 LLM 的回复里有 <code>tool_calls</code> 字段，
+    你就<strong>必须</strong>把工具结果以 <code>role: "tool"</code> 的消息追加进历史，否则 API 会报错。
+    每个 <code>tool_call</code> 有唯一的 <code>tool_call_id</code>，工具结果消息里要带上它做对应。
+  </div>
+</div>
+
+<!-- ────────── 04 RAG ────────── -->
+<div class="sec" id="m04">
+  <div class="sec-title">
+    <div class="icon" style="background:#f0fdf4;font-size:22px;">🔍</div>
+    <div>
+      <h2>04_rag — 检索增强生成（RAG）全链路</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">文本切块 → 向量化 → 存储 → 检索 → 精排 → 生成 完整流水线</div>
+    </div>
+  </div>
+
+  <div class="call call-green">
+    <strong>为什么需要 RAG？</strong>
+    LLM 的训练数据有截止日期，也不知道你的私有文档。RAG 让 LLM 先从外部知识库检索相关内容，
+    再基于检索到的上下文回答，解决「幻觉」和「不知道」的问题。
+  </div>
+
+  <h3>RAG 完整流水线图</h3>
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;overflow-x:auto;">
+  <svg viewBox="0 0 920 340" style="width:100%;max-width:920px;display:block;margin:0 auto;" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ag" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#22c55e"/>
+      </marker>
+    </defs>
+    <rect width="920" height="340" rx="10" fill="#f0fdf4" stroke="#bbf7d0"/>
+
+    <!-- ───── 离线阶段 ───── -->
+    <rect x="10" y="14" width="440" height="24" rx="6" fill="#dcfce7" stroke="none"/>
+    <text x="230" y="30" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">📥 离线阶段（Indexing）— 一次性建库</text>
+
+    <rect x="20"  y="50" width="90" height="60" rx="8" fill="#fff" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="65"  y="76" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">原始文档</text>
+    <text x="65"  y="92" text-anchor="middle" font-size="9"  fill="#6b7280">TXT/PDF/MD</text>
+    <text x="65"  y="104" text-anchor="middle" font-size="9" fill="#6b7280">chunker.py</text>
+
+    <rect x="140" y="50" width="90" height="60" rx="8" fill="#fff" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="185" y="76" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">文本分块</text>
+    <text x="185" y="92" text-anchor="middle" font-size="9"  fill="#6b7280">5种策略</text>
+    <text x="185" y="104" text-anchor="middle" font-size="9" fill="#6b7280">chunker.py</text>
+
+    <rect x="260" y="50" width="90" height="60" rx="8" fill="#fff" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="305" y="76" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">向量化</text>
+    <text x="305" y="92" text-anchor="middle" font-size="9"  fill="#6b7280">BGE-small-zh</text>
+    <text x="305" y="104" text-anchor="middle" font-size="9" fill="#6b7280">embedder.py</text>
+
+    <rect x="380" y="50" width="90" height="60" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="425" y="76" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">向量库</text>
+    <text x="425" y="92" text-anchor="middle" font-size="9"  fill="#6b7280">Chroma/HNSW</text>
+    <text x="425" y="104" text-anchor="middle" font-size="9" fill="#6b7280">vector_store.py</text>
+
+    <line x1="110" y1="80" x2="140" y2="80" stroke="#22c55e" stroke-width="1.5" marker-end="url(#ag)"/>
+    <line x1="230" y1="80" x2="260" y2="80" stroke="#22c55e" stroke-width="1.5" marker-end="url(#ag)"/>
+    <line x1="350" y1="80" x2="380" y2="80" stroke="#22c55e" stroke-width="1.5" marker-end="url(#ag)"/>
+
+    <!-- ───── 在线阶段 ───── -->
+    <rect x="10" y="140" width="900" height="24" rx="6" fill="#eff6ff" stroke="none"/>
+    <text x="460" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">🔎 在线阶段（Retrieval + Generation）— 每次查询触发</text>
+
+    <rect x="20"  y="176" width="90" height="60" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="65"  y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">用户查询</text>
+    <text x="65"  y="216" text-anchor="middle" font-size="9"  fill="#6b7280">原始问题</text>
+    <text x="65"  y="228" text-anchor="middle" font-size="9"  fill="#6b7280">agent.py</text>
+
+    <rect x="140" y="176" width="110" height="60" rx="8" fill="#fff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="195" y="198" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">召回检索</text>
+    <text x="195" y="212" text-anchor="middle" font-size="9"  fill="#6b7280">Dense+BM25</text>
+    <text x="195" y="224" text-anchor="middle" font-size="9"  fill="#6b7280">+RRF融合</text>
+    <text x="195" y="236" text-anchor="middle" font-size="9"  fill="#6b7280">retriever.py</text>
+
+    <!-- BM25 分支 -->
+    <rect x="270" y="160" width="90" height="30" rx="6" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="315" y="179" text-anchor="middle" font-size="10" font-weight="600" fill="#b45309">BM25 关键词</text>
+
+    <rect x="270" y="200" width="90" height="30" rx="6" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.2"/>
+    <text x="315" y="219" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">Dense 向量</text>
+
+    <rect x="390" y="176" width="80" height="60" rx="8" fill="#fff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="430" y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">精排</text>
+    <text x="430" y="214" text-anchor="middle" font-size="9"  fill="#6b7280">Cross-Encoder</text>
+    <text x="430" y="226" text-anchor="middle" font-size="9"  fill="#6b7280">reranker.py</text>
+
+    <rect x="500" y="176" width="120" height="60" rx="8" fill="#fff" stroke="#0891b2" stroke-width="1.5"/>
+    <text x="560" y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#0e7490">构建Prompt</text>
+    <text x="560" y="214" text-anchor="middle" font-size="9"  fill="#6b7280">原问题+检索</text>
+    <text x="560" y="226" text-anchor="middle" font-size="9"  fill="#6b7280">内容拼接</text>
+    <text x="560" y="238" text-anchor="middle" font-size="9"  fill="#6b7280">rag_pipeline.py</text>
+
+    <rect x="650" y="176" width="80" height="60" rx="8" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="690" y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">LLM</text>
+    <text x="690" y="214" text-anchor="middle" font-size="9"  fill="#6b7280">基于上下文</text>
+    <text x="690" y="226" text-anchor="middle" font-size="9"  fill="#6b7280">生成答案</text>
+    <text x="690" y="238" text-anchor="middle" font-size="9"  fill="#6b7280">llm.py</text>
+
+    <rect x="760" y="176" width="130" height="60" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="825" y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">最终答案</text>
+    <text x="825" y="214" text-anchor="middle" font-size="9"  fill="#6b7280">有来源引用</text>
+    <text x="825" y="226" text-anchor="middle" font-size="9"  fill="#6b7280">有置信度</text>
+
+    <!-- 向量库 → Dense -->
+    <line x1="425" y1="110" x2="425" y2="160" stroke="#22c55e" stroke-width="1.2" stroke-dasharray="4,2"/>
+    <line x1="425" y1="160" x2="360" y2="215" stroke="#22c55e" stroke-width="1.2" marker-end="url(#ag)"/>
+
+    <!-- 连线 -->
+    <line x1="110" y1="206" x2="140" y2="206" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#ag)"/>
+    <line x1="250" y1="195" x2="270" y2="175" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#ag)"/>
+    <line x1="250" y1="215" x2="270" y2="215" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#ag)"/>
+    <line x1="360" y1="175" x2="390" y2="195" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#ag)"/>
+    <line x1="360" y1="215" x2="390" y2="215" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#ag)"/>
+    <line x1="470" y1="206" x2="500" y2="206" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#ag)"/>
+    <line x1="620" y1="206" x2="650" y2="206" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#ag)"/>
+    <line x1="730" y1="206" x2="760" y2="206" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#ag)"/>
+
+    <!-- 标注 top-20 → top-5 -->
+    <text x="415" y="170" font-size="9" fill="#7c3aed">top-20</text>
+    <text x="495" y="170" font-size="9" fill="#7c3aed">→精排→top-5</text>
+
+    <!-- 说明文字 -->
+    <text x="460" y="295" text-anchor="middle" font-size="11" fill="#475569">BM25 = 关键词匹配（稀疏），Dense = 语义向量（稠密），RRF 互补融合效果最佳</text>
+    <text x="460" y="313" text-anchor="middle" font-size="11" fill="#475569">精排（Cross-Encoder）比双编码器慢但更准，一般用于 top-20 → top-5 的二次排序</text>
+  </svg>
+  </div>
+
+  <h3>文件清单</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#f0fdf4;color:#166534;">文本切块</div>
+        <div class="fc-name">chunker.py</div>
+      </div>
+      <div class="fc-desc">
+        5种切块策略，返回 <code>Chunk(text, index, start_char)</code> 列表：
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:11.5px;"><code>fixed_size_chunk</code><span style="color:#94a3b8;">·</span><span>固定字符数+重叠，通用基础</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:11.5px;"><code>sentence_chunk</code><span style="color:#94a3b8;">·</span><span>按句子合并，适合普通文章</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:11.5px;"><code>paragraph_chunk</code><span style="color:#94a3b8;">·</span><span>按空行分段，适合报告/文档</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:11.5px;"><code>markdown_chunk</code><span style="color:#94a3b8;">·</span><span>按标题切，适合技术文档</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:11.5px;"><code>parent_child_chunk</code><span style="color:#94a3b8;">·</span><span>父块+子块两级，精准且保留上下文</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#eff6ff;color:#1d4ed8;">向量化</div>
+        <div class="fc-name">embedder.py</div>
+      </div>
+      <div class="fc-desc">
+        封装本地 BGE-small-zh-v1.5 模型，<strong>不需要调用任何 API</strong>。
+        首次运行自动从 HuggingFace 下载（~100MB），之后本地缓存。
+        <code>embed(text)</code> 单条，<code>embed_batch(texts)</code> 批量，返回 L2 归一化后的 512 维向量。
+        归一化后两向量的点积 = 余弦相似度。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#f0fdf4;color:#166534;">向量库</div>
+        <div class="fc-name">vector_store.py</div>
+      </div>
+      <div class="fc-desc">
+        Chroma 向量库封装，持久化到 <code>data/chroma/</code> 目录。
+        <code>add_documents(texts, metadatas)</code> 自动 Embed + 存储；
+        <code>search(query, top_k)</code> 返回带相似度分数的结果列表。
+        内部用 HNSW 索引，近似最近邻搜索，大规模数据也很快。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fffbeb;color:#b45309;">三路检索</div>
+        <div class="fc-name">retriever.py</div>
+      </div>
+      <div class="fc-desc">
+        <strong>BM25Retriever</strong>：按字符分词 + BM25 打分，对精确词汇匹配敏感<br>
+        <strong>HybridRetriever</strong>：Dense + BM25 双路 + RRF 合并。
+        <code>reciprocal_rank_fusion()</code> 公式：每个结果得分 = Σ 1/(k+rank)，k=60 经验值，
+        避免任何单一结果完全主导排名。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#faf5ff;color:#7c3aed;">精排</div>
+        <div class="fc-name">reranker.py</div>
+      </div>
+      <div class="fc-desc">
+        Cross-Encoder 模型把「查询+文档」拼在一起输入，比双编码器更精准（但更慢）。
+        典型用法：先用 Hybrid 召回 top-20，再用 Reranker 精排到 top-5 给 LLM。
+        <code>rerank(query, docs, top_k)</code> 返回重新排序后的结果。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#ecfeff;color:#0e7490;">端到端</div>
+        <div class="fc-name">rag_pipeline.py</div>
+      </div>
+      <div class="fc-desc">
+        串联所有组件的完整流水线：
+        <code>build_index(docs)</code> 建库，<code>answer_with_rag(query)</code> 查询+生成。
+        Prompt 模板把检索内容注入：「根据以下内容回答：[检索结果]，问题：[用户问题]」
+      </div>
+    </div>
+  </div>
+
+  <h4>RRF 公式解释</h4>
+  <div class="call call-blue">
+    <strong>RRF（Reciprocal Rank Fusion）</strong>：设两路结果各给某文档的排名分别是 r₁ 和 r₂，<br>
+    该文档的融合得分 = <strong>1/(60+r₁) + 1/(60+r₂)</strong><br>
+    → 同时出现在两路中的文档得分更高；排名越靠前得分越高；k=60 防止最高排名结果完全压制其他结果。
+  </div>
+</div>
+
+<!-- ────────── 05 Memory ────────── -->
+<div class="sec" id="m05">
+  <div class="sec-title">
+    <div class="icon" style="background:#fffbeb;font-size:22px;">🧠</div>
+    <div>
+      <h2>05_memory — 记忆管理</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">短期（滑动窗口+摘要压缩）+ 长期（SQLite 持久化）</div>
+    </div>
+  </div>
+
+  <div class="call call-orange">
+    <strong>核心问题：</strong>LLM 的 Context Window 有 token 上限（通常 4k–128k），
+    多轮对话如果把所有历史都塞进去，很快就超限或变慢变贵。
+    需要策略性地管理「什么保留、什么压缩、什么持久化」。
+  </div>
+
+  <h3>两种记忆的对比</h3>
+  <table>
+    <tr><th>维度</th><th>短期记忆 short_term.py</th><th>长期记忆 long_term.py</th></tr>
+    <tr><td><strong>存活时间</strong></td><td>进程内，程序结束即消失</td><td>写入 SQLite，永久保存</td></tr>
+    <tr><td><strong>存储介质</strong></td><td>Python 列表（内存）</td><td>磁盘文件 <code>data/memory.db</code></td></tr>
+    <tr><td><strong>容量限制</strong></td><td>受 token 窗口限制</td><td>磁盘空间，无实质限制</td></tr>
+    <tr><td><strong>典型内容</strong></td><td>当前对话的上下文</td><td>用户偏好、反思记录、归档摘要</td></tr>
+    <tr><td><strong>更新频率</strong></td><td>每轮对话都更新</td><td>有意义事件时才写入</td></tr>
+  </table>
+
+  <h3>短期记忆：两种策略</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fffbeb;color:#b45309;">策略 1</div>
+        <div class="fc-name">SlidingWindowMemory</div>
+      </div>
+      <div class="fc-desc">
+        只保留最近 <code>max_turns</code> 轮对话，超出的直接丢弃。<br>
+        <strong>优点</strong>：实现简单，token 数恒定可控<br>
+        <strong>缺点</strong>：早期重要信息会丢失（比如第1轮说的名字，第20轮就忘了）<br>
+        <code>token_estimate</code> 属性粗略估算当前消耗的 token 数
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fffbeb;color:#b45309;">策略 2</div>
+        <div class="fc-name">SummaryMemory</div>
+      </div>
+      <div class="fc-desc">
+        当历史对话超过 <code>summary_trigger</code> 轮时，把早期部分发给 LLM 压缩成摘要，
+        摘要注入 System Prompt，最近 <code>recent_turns</code> 轮保留原文。<br>
+        <strong>优点</strong>：信息不完全丢失，还能保持合理的 token 数<br>
+        <strong>缺点</strong>：多一次 LLM 调用，摘要有信息损失
+      </div>
+    </div>
+  </div>
+
+  <h3>长期记忆：SQLite 表结构</h3>
+  <pre class="code"><span class="cm">-- data/memory.db 表结构</span>
+<span class="kw">CREATE TABLE</span> memories (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    category  TEXT,    <span class="cm">-- 类别：reflection / preference / fact / summary</span>
+    content   TEXT,    <span class="cm">-- 记忆内容（纯文字）</span>
+    metadata  TEXT,    <span class="cm">-- JSON 格式，可存任意扩展字段</span>
+    created   REAL     <span class="cm">-- Unix 时间戳</span>
+)</pre>
+
+  <h4>常用操作</h4>
+  <pre class="code"><span class="kw">from</span> long_term <span class="kw">import</span> init_db, save, load, save_reflection, load_reflections
+
+init_db()                                            <span class="cm"># 创建表（幂等）</span>
+save(<span class="str">"preference"</span>, <span class="str">"用户喜欢简洁的代码风格"</span>)             <span class="cm"># 写入偏好</span>
+save_reflection(<span class="str">"排序算法"</span>, <span class="str">"漏了最坏情况时间复杂度"</span>, attempt=1)  <span class="cm"># 写反思</span>
+
+rows = load(category=<span class="str">"preference"</span>, limit=5)           <span class="cm"># 按类别读</span>
+reflections = load_reflections()                      <span class="cm"># 读最近反思</span></pre>
+
+  <h4>短期 → 长期的归档流程</h4>
+  <div class="flow">
+    <div class="flow-box" style="background:#fffbeb;border-color:#fde68a;color:#b45309;font-size:12px;">多轮对话<br><small>short_term</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#fff7ed;border-color:#fed7aa;color:#c2410c;font-size:12px;">SummaryMemory<br><small>触发压缩</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;font-size:12px;">重要片段<br><small>手动识别</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#fffbeb;border-color:#fde68a;color:#b45309;font-size:12px;">save() 写入<br><small>long_term</small></div>
+    <div class="flow-arr">→</div>
+    <div class="flow-box" style="background:#ecfeff;border-color:#a5f3fc;color:#0e7490;font-size:12px;">下次启动<br><small>load() 注入</small></div>
+  </div>
+</div>
+
+<!-- ────────── 06 Multi-Agent ────────── -->
+<div class="sec" id="m06">
+  <div class="sec-title">
+    <div class="icon" style="background:#fef2f2;font-size:22px;">🤝</div>
+    <div>
+      <h2>06_multi_agent — 多 Agent 协作系统</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">专业化分工 · Pipeline 串行 · 共享黑板两种协作模式</div>
+    </div>
+  </div>
+
+  <div class="call call-red">
+    <strong>为什么要多 Agent？</strong><br>
+    单 Agent 的局限：① Token 窗口有限，处理大任务会超限；② 让一个 Agent 又搜索又写作，
+    工具太多容易「乱用」；③ 复杂任务难以并发。<br>
+    多 Agent 解法：<strong>专业化分工</strong>——每个 Agent 只有特定工具，只做自己擅长的事，
+    结果通过「传参」或「共享黑板」交换。
+  </div>
+
+  <h3>两种协作模式对比</h3>
+  <table>
+    <tr><th>模式</th><th>数据流向</th><th>实现方式</th><th>适合场景</th></tr>
+    <tr>
+      <td><strong>Pipeline 串行</strong></td>
+      <td>A → B → C 依次传递</td>
+      <td><code>result = agent_B.run(task, context=result_A)</code></td>
+      <td>步骤有明确先后顺序</td>
+    </tr>
+    <tr>
+      <td><strong>共享黑板</strong></td>
+      <td>每个 Agent 写入字典，协调者读取汇总</td>
+      <td><code>Blackboard.write()/read()</code></td>
+      <td>多 Agent 并行调研，最后汇总</td>
+    </tr>
+  </table>
+
+  <h3>多 Agent 协作图</h3>
+  <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;overflow-x:auto;">
+  <svg viewBox="0 0 860 330" style="width:100%;max-width:860px;display:block;margin:0 auto;" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="am" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#ef4444"/>
+      </marker>
+      <marker id="amb" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#f59e0b"/>
+      </marker>
+    </defs>
+    <rect width="860" height="330" rx="10" fill="#fff5f5" stroke="#fca5a5"/>
+
+    <!-- ─── Pipeline 模式（上半） ─── -->
+    <rect x="10" y="12" width="840" height="20" rx="5" fill="#fee2e2"/>
+    <text x="430" y="26" text-anchor="middle" font-size="11" font-weight="700" fill="#991b1b">Pipeline 模式：任务 → 搜索Agent → 写作Agent → 最终输出</text>
+
+    <rect x="20"  y="44" width="110" height="60" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="75" y="68" text-anchor="middle" font-size="11" font-weight="700" fill="#1d4ed8">用户任务</text>
+    <text x="75" y="84" text-anchor="middle" font-size="9" fill="#6b7280">pipeline_run(topic)</text>
+    <text x="75" y="96" text-anchor="middle" font-size="9" fill="#6b7280">orchestrator.py</text>
+
+    <rect x="170" y="44" width="160" height="60" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+    <text x="250" y="64" text-anchor="middle" font-size="11" font-weight="700" fill="#0e7490">搜索 Agent</text>
+    <text x="250" y="78" text-anchor="middle" font-size="9" fill="#6b7280">search_agent.py</text>
+    <text x="250" y="91" text-anchor="middle" font-size="9" fill="#0891b2">工具：web_search</text>
+    <text x="250" y="103" text-anchor="middle" font-size="9" fill="#0891b2">query_knowledge_base</text>
+
+    <!-- 搜索Agent内部工具调用 -->
+    <rect x="175" y="122" width="70" height="26" rx="5" fill="#fff" stroke="#0891b2" stroke-width="1"/>
+    <text x="210" y="139" text-anchor="middle" font-size="9" fill="#0e7490">web_search</text>
+    <rect x="255" y="122" width="70" height="26" rx="5" fill="#fff" stroke="#0891b2" stroke-width="1"/>
+    <text x="290" y="139" text-anchor="middle" font-size="9" fill="#0e7490">向量库检索</text>
+
+    <rect x="390" y="44" width="40" height="60" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="410" y="70" text-anchor="middle" font-size="18" fill="#94a3b8">→</text>
+    <text x="410" y="88" text-anchor="middle" font-size="9" fill="#6b7280">context</text>
+
+    <rect x="450" y="44" width="160" height="60" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="530" y="64" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">写作 Agent</text>
+    <text x="530" y="78" text-anchor="middle" font-size="9" fill="#6b7280">writing_agent.py</text>
+    <text x="530" y="91" text-anchor="middle" font-size="9" fill="#7c3aed">工具：generate_outline</text>
+    <text x="530" y="103" text-anchor="middle" font-size="9" fill="#7c3aed">check_completeness</text>
+
+    <rect x="640" y="44" width="100" height="60" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="690" y="72" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">最终文章</text>
+    <text x="690" y="87" text-anchor="middle" font-size="9" fill="#16a34a">结构化输出</text>
+
+    <line x1="130" y1="74" x2="170" y2="74" stroke="#ef4444" stroke-width="1.5" marker-end="url(#am)"/>
+    <line x1="330" y1="74" x2="390" y2="74" stroke="#ef4444" stroke-width="1.5" marker-end="url(#am)"/>
+    <line x1="430" y1="74" x2="450" y2="74" stroke="#ef4444" stroke-width="1.5" marker-end="url(#am)"/>
+    <line x1="610" y1="74" x2="640" y2="74" stroke="#ef4444" stroke-width="1.5" marker-end="url(#am)"/>
+    <line x1="210" y1="104" x2="210" y2="122" stroke="#0891b2" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="290" y1="104" x2="290" y2="122" stroke="#0891b2" stroke-width="1" stroke-dasharray="3,2"/>
+
+    <!-- ─── 黑板模式（下半） ─── -->
+    <rect x="10" y="162" width="840" height="20" rx="5" fill="#fef9c3"/>
+    <text x="430" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#713f12">黑板模式：多 Agent 并行写入 → 协调者汇总</text>
+
+    <!-- Agent-A -->
+    <rect x="20" y="192" width="130" height="60" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+    <text x="85" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#0e7490">Agent-A</text>
+    <text x="85" y="229" text-anchor="middle" font-size="9" fill="#6b7280">搜索核心概念</text>
+    <text x="85" y="241" text-anchor="middle" font-size="9" fill="#0891b2">search_agent</text>
+
+    <!-- Agent-B -->
+    <rect x="170" y="192" width="130" height="60" rx="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+    <text x="235" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#0e7490">Agent-B</text>
+    <text x="235" y="229" text-anchor="middle" font-size="9" fill="#6b7280">搜索实际应用</text>
+    <text x="235" y="241" text-anchor="middle" font-size="9" fill="#0891b2">search_agent</text>
+
+    <!-- 黑板 -->
+    <rect x="340" y="182" width="160" height="80" rx="8" fill="#fef9c3" stroke="#eab308" stroke-width="2"/>
+    <text x="420" y="206" text-anchor="middle" font-size="12" font-weight="800" fill="#713f12">📋 Blackboard</text>
+    <text x="420" y="222" text-anchor="middle" font-size="9" fill="#a16207">Agent-A: {核心概念: ...}</text>
+    <text x="420" y="235" text-anchor="middle" font-size="9" fill="#a16207">Agent-B: {实际应用: ...}</text>
+    <text x="420" y="248" text-anchor="middle" font-size="9" fill="#a16207">to_context_string() →</text>
+
+    <!-- 协调者 -->
+    <rect x="540" y="192" width="130" height="60" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="605" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">协调者</text>
+    <text x="605" y="229" text-anchor="middle" font-size="9" fill="#6b7280">read()读取全部</text>
+    <text x="605" y="241" text-anchor="middle" font-size="9" fill="#7c3aed">writing_agent</text>
+
+    <!-- 输出 -->
+    <rect x="710" y="192" width="120" height="60" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+    <text x="770" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#166534">综合报告</text>
+    <text x="770" y="230" text-anchor="middle" font-size="9" fill="#16a34a">多源信息汇总</text>
+    <text x="770" y="244" text-anchor="middle" font-size="9" fill="#16a34a">blackboard_run()</text>
+
+    <line x1="150" y1="222" x2="340" y2="222" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#amb)"/>
+    <line x1="300" y1="222" x2="340" y2="222" stroke="#f59e0b" stroke-width="1.5"/>
+    <line x1="265" y1="222" x2="340" y2="235" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#amb)"/>
+    <line x1="500" y1="222" x2="540" y2="222" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#am)"/>
+    <line x1="670" y1="222" x2="710" y2="222" stroke="#22c55e" stroke-width="1.5" marker-end="url(#am)"/>
+
+    <text x="430" y="300" text-anchor="middle" font-size="11" fill="#475569">Agent 专业化的关键：<tspan font-weight="700">System Prompt</tspan> 定义职责边界，<tspan font-weight="700">tools 列表</tspan> 限制能力范围</text>
+    <text x="430" y="318" text-anchor="middle" font-size="11" fill="#475569">搜索 Agent 没有写作工具，写作 Agent 没有搜索工具——工具集隔离实现专业化</text>
+  </svg>
+  </div>
+
+  <h3>文件清单</h3>
+  <div class="file-grid">
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fef2f2;color:#991b1b;">基类</div>
+        <div class="fc-name">base_agent.py</div>
+      </div>
+      <div class="fc-desc">
+        定义 Agent 三要素：<code>name</code>（日志标识）、<code>system</code>（System Prompt + 职责）、
+        <code>tools</code>（工具 Schema 列表）。<br>
+        <code>BaseAgent.run(task, context)</code> 实现通用的 ReAct 循环，
+        子类只需传入不同的 system 和 tools，即可创建行为完全不同的 Agent。<br>
+        <strong>context 参数</strong>：其他 Agent 传来的背景信息，追加到 System Prompt 末尾。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#ecfeff;color:#0e7490;">专业化</div>
+        <div class="fc-name">search_agent.py</div>
+      </div>
+      <div class="fc-desc">
+        <code>create_search_agent()</code> 工厂函数，返回一个只有 <code>web_search</code> 和
+        <code>query_knowledge_base</code> 两个工具的 Agent。
+        System Prompt 要求它「整理成结构化的关键事实列表」，不做写作工作。
+        工具隔离意味着它<strong>不可能</strong>去做其他 Agent 的事情。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#f5f3ff;color:#7c3aed;">专业化</div>
+        <div class="fc-name">writing_agent.py</div>
+      </div>
+      <div class="fc-desc">
+        <code>create_writing_agent()</code> 返回只有 <code>generate_outline</code> 和
+        <code>check_completeness</code> 工具的写作专家 Agent。
+        它不能搜索，只能基于已有信息写作——这就是多 Agent 系统「专业化」的本质。
+      </div>
+    </div>
+    <div class="file-card">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fffbeb;color:#b45309;">协调者</div>
+        <div class="fc-name">orchestrator.py</div>
+      </div>
+      <div class="fc-desc">
+        提供两种协作模式：<br>
+        <strong>pipeline_run(topic)</strong>：搜索→写作串行传递<br>
+        <strong>blackboard_run(topic)</strong>：多 Agent 并行写入 <code>Blackboard</code> 共享字典，
+        协调者最后调用 <code>to_context_string()</code> 把所有发现汇总成文字，注入写作 Agent。
+      </div>
+    </div>
+  </div>
+
+  <h4>如何「让 Agent 知道」其他 Agent 的发现</h4>
+  <pre class="code"><span class="cm"># 方式1：直接传 context（Pipeline 模式）</span>
+search_result = search_agent.run(<span class="str">"搜索 XXX"</span>)
+article = writing_agent.run(<span class="str">"写文章"</span>, context=search_result)  <span class="cm"># ← 直接字符串传递</span>
+
+<span class="cm"># 方式2：黑板模式</span>
+board = Blackboard()
+board.write(<span class="str">"搜索Agent-A"</span>, <span class="str">"核心概念"</span>, result_a)
+board.write(<span class="str">"搜索Agent-B"</span>, <span class="str">"实际应用"</span>, result_b)
+
+context_str = board.to_context_string()   <span class="cm"># 转成文字摘要</span>
+final = writing_agent.run(<span class="str">"综合汇总"</span>, context=context_str)  <span class="cm"># 注入写作 Agent</span></pre>
+</div>
+
+<!-- ────────── 命令行入口 ────────── -->
+<div class="sec" id="entry">
+  <div class="sec-title">
+    <div class="icon" style="background:#f8fafc;font-size:22px;">🎮</div>
+    <div>
+      <h2>agent.py — 命令行统一入口</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">三种运行模式的路由入口</div>
+    </div>
+  </div>
+
+  <pre class="code"><span class="cm"># ── 使用方法 ──────────────────────────────────────────────</span>
+source .venv/bin/activate
+
+<span class="cm"># 默认：单 Agent ReAct 模式</span>
+<span class="cmd">python agent.py</span> <span class="str">"北京今天天气怎么样？"</span>
+<span class="cmd">python agent.py</span> <span class="str">"sqrt(256) + sqrt(144) = ？"</span>
+
+<span class="cm"># 多 Agent Pipeline 模式</span>
+<span class="cmd">python agent.py</span> <span class="str">"向量数据库的核心原理"</span> --mode multi
+
+<span class="cm"># RAG 模式（指定本地文档目录）</span>
+<span class="cmd">python agent.py</span> <span class="str">"这批文档讲了什么主题？"</span> --mode rag --docs ./data/docs/</pre>
+
+  <h3>路由逻辑</h3>
+  <table>
+    <tr><th><code>--mode</code></th><th>调用路径</th><th>适合场景</th></tr>
+    <tr>
+      <td><code>react</code>（默认）</td>
+      <td><code>02_react/react_agent.py → run_react()</code></td>
+      <td>通用任务、工具调用、实时计算</td>
+    </tr>
+    <tr>
+      <td><code>multi</code></td>
+      <td><code>06_multi_agent/orchestrator.py → pipeline_run()</code></td>
+      <td>复杂调研任务、需要搜索+写作</td>
+    </tr>
+    <tr>
+      <td><code>rag</code></td>
+      <td><code>04_rag/rag_pipeline.py → answer_with_rag()</code></td>
+      <td>基于本地文档回答问题</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ────────── 设计决策 ────────── -->
+<div class="sec" id="design">
+  <div class="sec-title">
+    <div class="icon" style="background:#f0fdf4;font-size:22px;">💡</div>
+    <div>
+      <h2>设计决策与扩展思路</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">为什么这样设计 · 如何继续扩展</div>
+    </div>
+  </div>
+
+  <h3>关键设计决策</h3>
+  <table>
+    <tr><th>决策</th><th>选择</th><th>理由</th></tr>
+    <tr>
+      <td><strong>Embedding 模型</strong></td>
+      <td>本地 BGE-small-zh-v1.5</td>
+      <td>不依赖 OpenAI API，不产生额外费用，离线可用，中文效果好</td>
+    </tr>
+    <tr>
+      <td><strong>向量库</strong></td>
+      <td>ChromaDB（本地）</td>
+      <td>开箱即用，数据持久化到磁盘，适合单机学习场景；生产可换 Milvus/Weaviate</td>
+    </tr>
+    <tr>
+      <td><strong>LLM 接入方式</strong></td>
+      <td>OpenAI 兼容接口统一封装</td>
+      <td>一套代码适配 DeepSeek / Qwen / 任何国产模型，只需改 config.py</td>
+    </tr>
+    <tr>
+      <td><strong>工具系统</strong></td>
+      <td>Mock 实现 + 真实 Function Calling 格式</td>
+      <td>不依赖网络/外部 API，能跑通完整流程；格式与生产完全一致，可直接替换真实工具</td>
+    </tr>
+    <tr>
+      <td><strong>记忆系统</strong></td>
+      <td>SQLite（不用向量库）</td>
+      <td>记忆查询按类别/时间过滤即可，不需要语义搜索；SQLite 零配置，随代码库携带</td>
+    </tr>
+    <tr>
+      <td><strong>多 Agent 通信</strong></td>
+      <td>context 字符串 + Blackboard</td>
+      <td>最简实现，信息用自然语言传递。真实场景可以加向量检索或 structured JSON 协议</td>
+    </tr>
+  </table>
+
+  <h3>扩展方向</h3>
+  <div class="file-grid">
+    <div class="file-card" style="border-color:#bfdbfe;">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#eff6ff;color:#1d4ed8;">RAG 增强</div>
+      </div>
+      <div class="fc-desc">
+        1. 在 <code>04_rag/embedder.py</code> 换更大的 BGE 模型（bge-large-zh-v1.5，约 1.3GB）<br>
+        2. 在 <code>retriever.py</code> 加 <code>import jieba</code> 启用分词检索（BM25 更准）<br>
+        3. 在 <code>reranker.py</code> 下载 bge-reranker-base 模型做真实 Cross-Encoder 精排
+      </div>
+    </div>
+    <div class="file-card" style="border-color:#bbf7d0;">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#f0fdf4;color:#166534;">真实工具</div>
+      </div>
+      <div class="fc-desc">
+        在 <code>02_react/tools.py</code> 里把 Mock 实现替换成真实 API：<br>
+        • <code>search</code> → 接 Bing/Tavily/SerpAPI<br>
+        • <code>get_weather</code> → 接 OpenWeather/和风天气<br>
+        工具 Schema 格式不变，只需改 <code>execute_tool</code> 内部实现
+      </div>
+    </div>
+    <div class="file-card" style="border-color:#ddd6fe;">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#faf5ff;color:#7c3aed;">记忆升级</div>
+      </div>
+      <div class="fc-desc">
+        把 <code>long_term.py</code> 的 SQLite 全文检索升级为向量检索：<br>
+        在 <code>save()</code> 时同时用 embedder 计算向量存入向量库，
+        <code>load()</code> 时用语义相似度而非类别过滤检索——
+        这就是「自动记忆」的雏形
+      </div>
+    </div>
+    <div class="file-card" style="border-color:#fde68a;">
+      <div class="fc-head">
+        <div class="fc-tag" style="background:#fffbeb;color:#b45309;">并发 Agent</div>
+      </div>
+      <div class="fc-desc">
+        把 <code>orchestrator.py</code> 的串行 Agent 改成 <code>asyncio.gather()</code> 并发：<br>
+        Agent-A 和 Agent-B 同时执行，结果都写入 Blackboard，
+        减少总等待时间——适合多个独立子任务的场景
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ────────── Changelog ────────── -->
+<div class="sec" id="changelog">
+  <div class="sec-title">
+    <div class="icon" style="background:#f8fafc;font-size:22px;">📋</div>
+    <div>
+      <h2>更新日志</h2>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">代码库变更记录</div>
+    </div>
+  </div>
+
+  <div class="cl-item">
+    <div class="cl-date">2026-04-03</div>
+    <div class="cl-tag" style="background:#dcfce7;color:#166534;">v1.1 测试通过</div>
+    <div class="cl-body">
+      完成 8/8 模块端到端测试（DeepSeek API）。修复两个 Bug：
+      <code>tools.py calculator</code> 白名单正则（支持 sqrt/pow/abs），
+      <code>retriever.py jieba</code> 可选导入（jieba 未安装时退回字符分词）。
+    </div>
+  </div>
+  <div class="cl-item">
+    <div class="cl-date">2026-04-03</div>
+    <div class="cl-tag" style="background:#eff6ff;color:#1d4ed8;">v1.0 初始版本</div>
+    <div class="cl-body">
+      创建完整代码库：18 个 Python 文件，覆盖 CoT / ReAct / Reflexion / Function Calling /
+      RAG（5种切块 + Hybrid检索 + RRF + Reranker）/ 短期记忆 / 长期记忆 / Multi-Agent（Pipeline + 黑板）。
+      已安装依赖：openai 2.30.0 · chromadb 1.5.5 · sentence-transformers 5.1.2 · rank-bm25 0.2.2 · torch 2.8.0 · numpy 2.0.2
+    </div>
+  </div>
+
+  <div style="margin-top:20px;padding:14px;background:#f8fafc;border-radius:10px;font-size:12.5px;color:var(--muted);">
+    <strong style="color:var(--text);">文件路径：</strong>
+    <code>~/Desktop/agent-learning/design.html</code> · 本文档随代码库持续更新
+  </div>
+</div>
+
+  </div><!-- end content -->
+</div><!-- end layout -->
+</div><!-- end page -->
+</body>
+</html>
